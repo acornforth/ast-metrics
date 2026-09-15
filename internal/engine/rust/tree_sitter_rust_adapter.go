@@ -87,30 +87,29 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
-	var walk func(*sitter.Node)
-	walk = func(x *sitter.Node) {
-		if x == nil {
-			return
+	// One yield per declared parameter: only the pattern is read, never the
+	// type. A recursive walk over the identifiers would count "Vec<String>" as
+	// two more parameters on top of the variable it types.
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		p := params.NamedChild(i)
+		if p == nil {
+			continue
 		}
-		typ := x.Type()
-		// identifiers inside parameter patterns
-		if typ == "identifier" || typ == "type_identifier" || typ == "shorthand_field_identifier" {
-			yield(a.text(x))
-		}
-		// self parameter
-		if typ == "self" || typ == "self_parameter" {
+		switch p.Type() {
+		case "self_parameter":
 			yield("self")
-			return
-		}
-		// pattern_identifier covers simple `x: T`
-		if typ == "pattern_identifier" {
-			yield(a.text(x))
-		}
-		for i := 0; i < int(x.ChildCount()); i++ {
-			walk(x.Child(i))
+		case "variadic_parameter":
+			yield("...")
+		case "parameter":
+			if pattern := p.ChildByFieldName("pattern"); pattern != nil {
+				yield(a.text(pattern))
+				continue
+			}
+			// a parameter whose pattern is the wildcard: no name, but a
+			// parameter all the same
+			yield("_")
 		}
 	}
-	walk(params)
 }
 
 // These questions are asked on every node of every walk, so they are answered

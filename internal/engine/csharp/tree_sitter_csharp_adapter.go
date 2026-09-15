@@ -129,6 +129,13 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 			yield(text(a.src, nm))
 		}
 	}
+
+	// The grammar does not wrap a "params" array in a parameter node: its type
+	// and its name are set as fields of the list itself. Without this, the last
+	// parameter of "void M(int a, params string[] rest)" is not counted at all.
+	if nm := params.ChildByFieldName("name"); nm != nil {
+		yield(text(a.src, nm))
+	}
 }
 
 // ModuleNameFromPath ignores the file path and returns the declared namespace
