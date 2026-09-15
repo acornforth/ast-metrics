@@ -138,20 +138,59 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
+	// One yield per declared parameter: the children of the parameter list are
+	// walked, not their subtrees. A recursive walk would count the type name,
+	// the default value and the "name" token nested in every variable_name, so
+	// a constructor promoting four typed properties would report twelve
+	// parameters.
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		p := params.NamedChild(i)
+		if p == nil || !isParameterNode(p) {
+			continue
+		}
+		if name := a.paramVariableName(p); name != "" {
+			yield(name)
+		}
+	}
+}
+
+// isParameterNode tells the parameter declarations apart from the comments and
+// the error nodes a partially understood signature leaves in the list.
+func isParameterNode(n *sitter.Node) bool {
+	switch n.Type() {
+	case "simple_parameter", "variadic_parameter", "property_promotion_parameter":
+		return true
+	}
+	return false
+}
+
+// paramVariableName reads the variable a parameter declares. The "name" field
+// is used when the grammar sets it, and the first variable_name below the
+// declaration otherwise: a syntax the embedded grammar does not know yet, such
+// as the asymmetric visibility of PHP 8.4, still yields its variable.
+func (a *TreeSitterAdapter) paramVariableName(p *sitter.Node) string {
+	if n := p.ChildByFieldName("name"); n != nil {
+		return a.text(n)
+	}
+	var found *sitter.Node
 	var walk func(*sitter.Node)
 	walk = func(x *sitter.Node) {
-		if x == nil {
+		if x == nil || found != nil {
 			return
 		}
-		// PHP parameter var names appear as variable_name → name token "$x"
-		if x.Type() == "variable_name" || x.Type() == "name" || x.Type() == "variable" {
-			yield(a.text(x))
+		if x.Type() == "variable_name" {
+			found = x
+			return
 		}
 		for i := 0; i < int(x.ChildCount()); i++ {
 			walk(x.Child(i))
 		}
 	}
-	walk(params)
+	walk(p)
+	if found == nil {
+		return ""
+	}
+	return a.text(found)
 }
 
 // ---- Namespace/module helpers ----
