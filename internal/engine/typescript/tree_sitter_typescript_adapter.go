@@ -146,24 +146,21 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
-			return
+	// One yield per declared parameter: only the pattern is read. Walking the
+	// subtree would count the identifier of a default value, and would turn a
+	// single destructured parameter into one parameter per field it unpacks.
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		p := params.NamedChild(i)
+		if p == nil {
+			continue
 		}
-		// Skip type annotations to avoid counting type names as parameters
-		if n.Type() == "type_annotation" || n.Type() == "type_identifier" {
-			return
-		}
-		if n.Type() == "identifier" || n.Type() == "shorthand_property_identifier_pattern" {
-			yield(text(a.src, n))
-			return
-		}
-		for i := 0; i < int(n.ChildCount()); i++ {
-			walk(n.Child(i))
+		switch p.Type() {
+		case "required_parameter", "optional_parameter":
+			if pattern := p.ChildByFieldName("pattern"); pattern != nil {
+				yield(text(a.src, pattern))
+			}
 		}
 	}
-	walk(params)
 }
 
 func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {

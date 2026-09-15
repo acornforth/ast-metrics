@@ -70,19 +70,36 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
-	var walk func(*sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n == nil {
-			return
-		}
-		if n.Type() == "identifier" {
-			yield(string(a.src[n.StartByte():n.EndByte()]))
-		}
-		for i := 0; i < int(n.ChildCount()); i++ {
-			walk(n.Child(i))
+	// One yield per declared parameter. A recursive walk over the identifiers
+	// would also collect the annotations and the default values, so "def m(self,
+	// a: int, b: str = 'x')" would report five parameters instead of three.
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		if name := a.paramName(params.NamedChild(i)); name != "" {
+			yield(name)
 		}
 	}
-	walk(params)
+}
+
+// paramName reads the variable a parameter declares, whatever wraps it: a type
+// annotation, a default value, or the star of *args and **kwargs. The "/" and
+// "*" separators declare nothing, so they yield no name.
+func (a *TreeSitterAdapter) paramName(n *sitter.Node) string {
+	if n == nil {
+		return ""
+	}
+	switch n.Type() {
+	case "identifier":
+		return a.text(n)
+	case "positional_separator", "keyword_separator", "comment":
+		return ""
+	case "typed_parameter", "list_splat_pattern", "dictionary_splat_pattern":
+		return a.paramName(n.NamedChild(0))
+	case "default_parameter", "typed_default_parameter":
+		return a.text(n.ChildByFieldName("name"))
+	}
+	// a tuple destructuring, and whatever a newer grammar may add: the whole
+	// declaration is one parameter, so its text names it
+	return a.text(n)
 }
 
 func (a *TreeSitterAdapter) Language() *sitter.Language { return tsPython.GetLanguage() }
